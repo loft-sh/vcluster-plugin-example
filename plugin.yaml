@@ -3,4 +3,7 @@
 plugin:
   sync-all-configmaps:
     image: loftsh/vcluster-sync-all-configmaps
-    imagePullPolicy: IfNotPresent
+syncer:
+  extraArgs:
+    # disable built-in ConfigMaps syncer because we replace it with our own implementation
+    - "--sync=-configmaps"
