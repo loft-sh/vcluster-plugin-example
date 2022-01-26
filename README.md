@@ -1,8 +1,39 @@
 ## Image Pull Secret Sync Plugin
 
-This example plugin syncs pull secrets from the host cluster into vcluster. The pull secrets are synced from the namespace where vcluster is installed into the default namespace in vcluster.
+This example plugin syncs config maps from the vcluster into the host cluster.
 
-For more information how to develop plugins in vcluster, please refer to the [official vcluster docs](https://www.vcluster.com/docs/what-are-virtual-clusters).
+For more information how to develop plugins in vcluster and a complete walk through, please refer to the [official vcluster docs](https://www.vcluster.com/docs/plugins/overview).
+
+### Using the Plugin
+
+To use the plugin, create a new vcluster with the `plugin.yaml`:
+
+```
+# Use public plugin.yaml
+vcluster create my-vcluster -n my-vcluster -f https://raw.githubusercontent.com/loft-sh/vcluster-plugin-example/main/plugin.yaml
+```
+
+This will create a new vcluster with the plugin installed. After that, wait for vcluster to start up and check:
+
+```
+# Create a config map in the virtual cluster
+vcluster connect my-vcluster -n my-vcluster -- kubectl create configmap special-config --from-literal=special.how=very --from-literal=special.type=charm
+
+# Check if the configmap was synced to the host cluster
+kubectl get configmaps -n my-vcluster
+```
+
+### Building the Plugin
+To just build the plugin image and push it to the registry, run:
+```
+# Build
+docker build . -t my-repo/my-plugin:0.0.1
+
+# Push
+docker push my-repo/my-plugin:0.0.1
+```
+
+Then exchange the image in the `plugin.yaml`.
 
 ## Development
 
@@ -56,28 +87,3 @@ Delete the development environment with:
 devspace purge -n vcluster
 ```
 
-## Using the Plugin in vcluster
-
-### Building the Plugin
-To just build the plugin image and push it to the registry, run:
-```
-# Build
-docker build . -t my-repo/my-plugin:0.0.1
-
-# Push
-docker push my-repo/my-plugin:0.0.1
-```
-
-### Using the Plugin
-
-To use the plugin, create a new vcluster with the `plugin.yaml`:
-
-```
-# Use local plugin.yaml
-vcluster create my-vcluster -n my-vcluster -f ./plugin.yaml
-
-# Use public plugin.yaml
-vcluster create my-vcluster -n my-vcluster -f https://raw.githubusercontent.com/loft-sh/vcluster-sdk/main/examples/pull-secret-sync/plugin.yaml
-```
-
-This will create a new vcluster with the plugin installed.
