@@ -58,6 +58,7 @@ Before starting to develop, make sure you have installed the following tools on 
 - [helm](https://helm.sh/docs/intro/install/), which is used to deploy vcluster and the plugin
 - [vcluster CLI](https://www.vcluster.com/docs/getting-started/setup) v0.6.0 or higher
 - [DevSpace](https://devspace.sh/cli/docs/quickstart), which is used to spin up a development environment
+- [Go](https://go.dev/dl/) programming language build tools
 
 If you want to develop within a remote Kubernetes cluster (as opposed to docker-desktop or minikube), make sure to exchange `PLUGIN_IMAGE` in the `devspace.yaml` with a valid registry path you can push to.
 
@@ -86,4 +87,13 @@ Delete the development environment with:
 ```
 devspace purge -n vcluster
 ```
+
+### Unit tests
+Example unit tests can be executed with:
+```
+go test ./...
+```
+
+The source code of the example tests can be found in the `syncers/configmaps_test.go` file.
+It is using the [vcluster-sdk/syncer/testing](https://pkg.go.dev/github.com/loft-sh/vcluster-sdk/syncer/testing) package for easier testing of the syncers.
 
