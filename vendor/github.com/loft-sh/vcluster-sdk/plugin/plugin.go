@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/loft-sh/vcluster-sdk/clienthelper"
+	"github.com/loft-sh/vcluster-sdk/hook"
 	"github.com/loft-sh/vcluster-sdk/log"
 	"github.com/loft-sh/vcluster-sdk/plugin/remote"
 	"github.com/loft-sh/vcluster-sdk/syncer"
@@ -13,12 +15,18 @@ import (
 	"google.golang.org/grpc"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/clientcmd"
+	"net"
+	"os"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sync"
 	"time"
+)
+
+const (
+	PLUGIN_SERVER_ADDRESS = "VCLUSTER_PLUGIN_ADDRESS"
 )
 
 var defaultManager Manager = &manager{}
@@ -28,6 +36,8 @@ type Options struct {
 	// the vcluster plugin server at. Defaults to localhost:10099
 	ListenAddress string
 }
+
+type LeaderElectionHook func(ctx context.Context) error
 
 type Manager interface {
 	// Init creates a new plugin context and will block until the
@@ -93,8 +103,11 @@ type manager struct {
 	started     bool
 	syncers     []syncer.Base
 
+	name    string
 	address string
 	context *synccontext.RegisterContext
+
+	hooks []*remote.ClientHook
 }
 
 func (m *manager) Init(name string) (*synccontext.RegisterContext, error) {
@@ -115,6 +128,7 @@ func (m *manager) InitWithOptions(name string, opts Options) (*synccontext.Regis
 	m.initialized = true
 
 	log := log.New("plugin")
+	m.name = name
 	m.address = "localhost:10099"
 	if opts.ListenAddress != "" {
 		m.address = opts.ListenAddress
@@ -132,7 +146,7 @@ func (m *manager) InitWithOptions(name string, opts Options) (*synccontext.Regis
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 		defer cancel()
 
-		pluginContext, err = remote.NewPluginInitializerClient(conn).Register(ctx, &remote.PluginInfo{Name: name})
+		pluginContext, err = remote.NewVClusterClient(conn).GetContext(ctx, &remote.Empty{})
 		if err != nil {
 			return false, nil
 		}
@@ -245,10 +259,188 @@ func (m *manager) Start() error {
 	return nil
 }
 
+func (m *manager) registerPlugin(log log.Logger) error {
+	serverAddress := os.Getenv(PLUGIN_SERVER_ADDRESS)
+	if serverAddress == "" {
+		log.Errorf("Environment variable %s not defined, are you using an old vcluster version?", PLUGIN_SERVER_ADDRESS)
+		return nil
+	}
+
+	// gather all hooks
+	hooks := map[ApiVersionKindType][]hook.ClientHook{}
+	for _, s := range m.syncers {
+		clientHook, ok := s.(hook.ClientHook)
+		if !ok {
+			continue
+		}
+
+		obj := clientHook.Resource()
+		gvk, err := clienthelper.GVKFrom(obj, Scheme)
+		if err != nil {
+			return fmt.Errorf("cannot detect group version of resource object")
+		}
+
+		apiVersion, kind := gvk.ToAPIVersionAndKind()
+		_, ok = clientHook.(hook.MutateCreatePhysical)
+		if ok {
+			apiVersionKindType := ApiVersionKindType{
+				ApiVersion: apiVersion,
+				Kind:       kind,
+				Type:       "CreatePhysical",
+			}
+			hooks[apiVersionKindType] = append(hooks[apiVersionKindType], clientHook)
+		}
+		_, ok = clientHook.(hook.MutateUpdatePhysical)
+		if ok {
+			apiVersionKindType := ApiVersionKindType{
+				ApiVersion: apiVersion,
+				Kind:       kind,
+				Type:       "UpdatePhysical",
+			}
+			hooks[apiVersionKindType] = append(hooks[apiVersionKindType], clientHook)
+		}
+		_, ok = clientHook.(hook.MutateDeletePhysical)
+		if ok {
+			apiVersionKindType := ApiVersionKindType{
+				ApiVersion: apiVersion,
+				Kind:       kind,
+				Type:       "DeletePhysical",
+			}
+			hooks[apiVersionKindType] = append(hooks[apiVersionKindType], clientHook)
+		}
+		_, ok = clientHook.(hook.MutateGetPhysical)
+		if ok {
+			apiVersionKindType := ApiVersionKindType{
+				ApiVersion: apiVersion,
+				Kind:       kind,
+				Type:       "GetPhysical",
+			}
+			hooks[apiVersionKindType] = append(hooks[apiVersionKindType], clientHook)
+		}
+		_, ok = clientHook.(hook.MutateCreateVirtual)
+		if ok {
+			apiVersionKindType := ApiVersionKindType{
+				ApiVersion: apiVersion,
+				Kind:       kind,
+				Type:       "CreateVirtual",
+			}
+			hooks[apiVersionKindType] = append(hooks[apiVersionKindType], clientHook)
+		}
+		_, ok = clientHook.(hook.MutateUpdateVirtual)
+		if ok {
+			apiVersionKindType := ApiVersionKindType{
+				ApiVersion: apiVersion,
+				Kind:       kind,
+				Type:       "UpdateVirtual",
+			}
+			hooks[apiVersionKindType] = append(hooks[apiVersionKindType], clientHook)
+		}
+		_, ok = clientHook.(hook.MutateDeleteVirtual)
+		if ok {
+			apiVersionKindType := ApiVersionKindType{
+				ApiVersion: apiVersion,
+				Kind:       kind,
+				Type:       "DeleteVirtual",
+			}
+			hooks[apiVersionKindType] = append(hooks[apiVersionKindType], clientHook)
+		}
+		_, ok = clientHook.(hook.MutateGetVirtual)
+		if ok {
+			apiVersionKindType := ApiVersionKindType{
+				ApiVersion: apiVersion,
+				Kind:       kind,
+				Type:       "GetVirtual",
+			}
+			hooks[apiVersionKindType] = append(hooks[apiVersionKindType], clientHook)
+		}
+	}
+
+	// transform hooks
+	registeredHooks := []*remote.ClientHook{}
+	for key := range hooks {
+		hookFound := false
+		for _, h := range registeredHooks {
+			if h.ApiVersion == key.ApiVersion && h.Kind == key.Kind {
+				found := false
+				for _, t := range h.Types {
+					if t == key.Type {
+						found = true
+						break
+					}
+				}
+				if !found {
+					h.Types = append(h.Types, key.Type)
+				}
+
+				hookFound = true
+				break
+			}
+		}
+
+		if !hookFound {
+			registeredHooks = append(registeredHooks, &remote.ClientHook{
+				ApiVersion: key.ApiVersion,
+				Kind:       key.Kind,
+				Types:      []string{key.Type},
+			})
+		}
+	}
+
+	// start the grpc server
+	if len(registeredHooks) > 0 {
+		log.Infof("Plugin server listening on %s", serverAddress)
+		lis, err := net.Listen("tcp", serverAddress)
+		if err != nil {
+			return fmt.Errorf("failed to listen: %v", err)
+		}
+
+		var opts []grpc.ServerOption
+		grpcServer := grpc.NewServer(opts...)
+		remote.RegisterPluginServer(grpcServer, &pluginServer{
+			hooks:           hooks,
+			registeredHooks: registeredHooks,
+		})
+		go func() {
+			err := grpcServer.Serve(lis)
+			if err != nil {
+				panic(err)
+			}
+		}()
+	}
+
+	// register the plugin
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
+	defer cancel()
+
+	conn, err := grpc.Dial(m.address, grpc.WithInsecure())
+	if err != nil {
+		return fmt.Errorf("error dialing vcluster: %v", err)
+	}
+
+	defer conn.Close()
+	_, err = remote.NewVClusterClient(conn).RegisterPlugin(ctx, &remote.RegisterPluginRequest{
+		Version:     "v1",
+		Name:        m.name,
+		Address:     serverAddress,
+		ClientHooks: registeredHooks,
+	})
+	if err != nil {
+		log.Errorf("error trying to connect to vcluster: %v", err)
+		return err
+	}
+
+	return nil
+}
+
 func (m *manager) start() error {
 	log := log.New("plugin")
 	if m.started {
 		return fmt.Errorf("manager was already started")
+	}
+
+	err := m.registerPlugin(log)
+	if err != nil {
+		return errors.Wrap(err, "start hook server")
 	}
 
 	log.Infof("Waiting for vcluster to become leader...")
@@ -261,7 +453,7 @@ func (m *manager) start() error {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second*10)
 		defer cancel()
 
-		isLeader, err := remote.NewPluginInitializerClient(conn).IsLeader(ctx, &remote.Empty{})
+		isLeader, err := remote.NewVClusterClient(conn).IsLeader(ctx, &remote.Empty{})
 		if err != nil {
 			log.Errorf("error trying to connect to vcluster: %v", err)
 			conn.Close()
