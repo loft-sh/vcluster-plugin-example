@@ -6,7 +6,7 @@ import (
 )
 
 func main() {
-	ctx := plugin.MustInit("sync-all-configmaps-plugin")
+	ctx := plugin.MustInit()
 	plugin.MustRegister(syncers.NewConfigMapSyncer(ctx))
 	plugin.MustStart()
 }
