@@ -1,6 +1,6 @@
-## Image Pull Secret Sync Plugin
+## vCluster Plugin Example
 
-This example plugin syncs config maps from the vcluster into the host cluster.
+This example plugin syncs car crds from the vcluster into the host cluster.
 
 For more information how to develop plugins in vcluster and a complete walk through, please refer to the [official vcluster docs](https://www.vcluster.com/docs/plugins/overview).
 
@@ -16,11 +16,11 @@ vcluster create my-vcluster -n my-vcluster -f https://raw.githubusercontent.com/
 This will create a new vcluster with the plugin installed. After that, wait for vcluster to start up and check:
 
 ```
-# Create a config map in the virtual cluster
-vcluster connect my-vcluster -n my-vcluster -- kubectl create configmap special-config --from-literal=special.how=very --from-literal=special.type=charm
+# Create a car in the virtual cluster
+vcluster connect my-vcluster -n my-vcluster -- kubectl apply -f manifests/audi.yaml
 
-# Check if the configmap was synced to the host cluster
-kubectl get configmaps -n my-vcluster
+# Check if the car was synced to the host cluster
+kubectl get car -n my-vcluster
 ```
 
 ### Building the Plugin
@@ -45,7 +45,6 @@ General vcluster plugin project structure:
 ├── devspace.yaml       # Development environment definition
 ├── devspace_start.sh   # Development entrypoint script
 ├── Dockerfile          # Production Dockerfile 
-├── Dockerfile.dev      # Development Dockerfile
 ├── main.go             # Go Entrypoint
 ├── plugin.yaml         # Plugin Helm Values
 ├── syncers/            # Plugin Syncers
@@ -60,8 +59,6 @@ Before starting to develop, make sure you have installed the following tools on 
 - [DevSpace](https://devspace.sh/cli/docs/quickstart), which is used to spin up a development environment
 - [Go](https://go.dev/dl/) programming language build tools
 
-If you want to develop within a remote Kubernetes cluster (as opposed to docker-desktop or minikube), make sure to exchange `PLUGIN_IMAGE` in the `devspace.yaml` with a valid registry path you can push to.
-
 After successfully setting up the tools, start the development environment with:
 ```
 devspace dev -n vcluster
@@ -69,16 +66,7 @@ devspace dev -n vcluster
 
 After a while a terminal should show up with additional instructions. Enter the following command to start the plugin:
 ```
-go run -mod vendor main.go
-```
-
-The output should look something like this:
-```
-I0124 11:20:14.702799    4185 logr.go:249] plugin: Try creating context...
-I0124 11:20:14.730044    4185 logr.go:249] plugin: Waiting for vcluster to become leader...
-I0124 11:20:14.731097    4185 logr.go:249] plugin: Starting syncers...
-[...]
-I0124 11:20:15.957331    4185 logr.go:249] plugin: Successfully started plugin.
+go build -mod vendor -o plugin main.go && /vcluster/syncer start
 ```
 
 You can now change a file locally in your IDE and then restart the command in the terminal to apply the changes to the plugin.
@@ -87,13 +75,3 @@ Delete the development environment with:
 ```
 devspace purge -n vcluster
 ```
-
-### Unit tests
-Example unit tests can be executed with:
-```
-go test ./...
-```
-
-The source code of the example tests can be found in the `syncers/configmaps_test.go` file.
-It is using the [vcluster-sdk/syncer/testing](https://pkg.go.dev/github.com/loft-sh/vcluster-sdk/syncer/testing) package for easier testing of the syncers.
-
