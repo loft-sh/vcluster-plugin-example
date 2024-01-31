@@ -3,7 +3,7 @@
 plugin:
   vcluster-plugin-example:
     version: v2
-    image: ghcr.io/loft-sh/vcluster-plugin-example:v1
+    image: ghcr.io/loft-sh/vcluster-plugin-example:v2
     rbac:
       role:
         extraRules:
