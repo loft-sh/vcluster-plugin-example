@@ -44,23 +44,25 @@ func (n *clusterTranslator) IsManaged(_ context2.Context, pObj client.Object) (b
 	return translate.Default.IsManagedCluster(pObj), nil
 }
 
-func (n *clusterTranslator) VirtualToPhysical(_ context2.Context, req types.NamespacedName, vObj client.Object) types.NamespacedName {
+func (n *clusterTranslator) VirtualToHost(_ context2.Context, req types.NamespacedName, vObj client.Object) types.NamespacedName {
 	return types.NamespacedName{
 		Name: n.nameTranslator(req.Name, vObj),
 	}
 }
 
-func (n *clusterTranslator) PhysicalToVirtual(ctx context2.Context, pObj client.Object) types.NamespacedName {
-	pAnnotations := pObj.GetAnnotations()
-	if pAnnotations != nil && pAnnotations[translate.NameAnnotation] != "" {
-		return types.NamespacedName{
-			Namespace: pAnnotations[translate.NamespaceAnnotation],
-			Name:      pAnnotations[translate.NameAnnotation],
+func (n *clusterTranslator) HostToVirtual(ctx context2.Context, req types.NamespacedName, pObj client.Object) types.NamespacedName {
+	if pObj != nil {
+		pAnnotations := pObj.GetAnnotations()
+		if pAnnotations != nil && pAnnotations[translate.NameAnnotation] != "" {
+			return types.NamespacedName{
+				Namespace: pAnnotations[translate.NamespaceAnnotation],
+				Name:      pAnnotations[translate.NameAnnotation],
+			}
 		}
 	}
 
 	vObj := n.obj.DeepCopyObject().(client.Object)
-	err := clienthelper.GetByIndex(ctx, n.virtualClient, vObj, constants.IndexByPhysicalName, pObj.GetName())
+	err := clienthelper.GetByIndex(ctx, n.virtualClient, vObj, constants.IndexByPhysicalName, req.Name)
 	if err != nil {
 		return types.NamespacedName{}
 	}

@@ -47,13 +47,10 @@ func (n *mirrorPhysicalTranslator) IsManaged(context.Context, client.Object) (bo
 	return true, nil
 }
 
-func (n *mirrorPhysicalTranslator) VirtualToPhysical(_ context.Context, req types.NamespacedName, _ client.Object) types.NamespacedName {
+func (n *mirrorPhysicalTranslator) VirtualToHost(_ context.Context, req types.NamespacedName, _ client.Object) types.NamespacedName {
 	return req
 }
 
-func (n *mirrorPhysicalTranslator) PhysicalToVirtual(_ context.Context, pObj client.Object) types.NamespacedName {
-	return types.NamespacedName{
-		Namespace: pObj.GetNamespace(),
-		Name:      pObj.GetName(),
-	}
+func (n *mirrorPhysicalTranslator) HostToVirtual(_ context.Context, req types.NamespacedName, _ client.Object) types.NamespacedName {
+	return req
 }

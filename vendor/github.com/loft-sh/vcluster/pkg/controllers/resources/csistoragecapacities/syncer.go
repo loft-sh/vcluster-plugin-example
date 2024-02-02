@@ -8,6 +8,7 @@ import (
 	"github.com/loft-sh/vcluster/pkg/controllers/syncer/translator"
 	syncertypes "github.com/loft-sh/vcluster/pkg/types"
 	storagev1 "k8s.io/api/storage/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -33,10 +34,10 @@ type csistoragecapacitySyncer struct {
 	physicalClient              client.Client
 }
 
-var _ syncertypes.UpSyncer = &csistoragecapacitySyncer{}
+var _ syncertypes.ToVirtualSyncer = &csistoragecapacitySyncer{}
 var _ syncertypes.Syncer = &csistoragecapacitySyncer{}
 
-func (s *csistoragecapacitySyncer) SyncUp(ctx *synccontext.SyncContext, pObj client.Object) (ctrl.Result, error) {
+func (s *csistoragecapacitySyncer) SyncToVirtual(ctx *synccontext.SyncContext, pObj client.Object) (ctrl.Result, error) {
 	vObj, shouldSkip, err := s.translateBackwards(ctx, pObj.(*storagev1.CSIStorageCapacity))
 	if err != nil || shouldSkip {
 		return ctrl.Result{}, err
@@ -66,7 +67,7 @@ func (s *csistoragecapacitySyncer) Sync(ctx *synccontext.SyncContext, pObj clien
 	return ctrl.Result{}, nil
 }
 
-func (s *csistoragecapacitySyncer) SyncDown(ctx *synccontext.SyncContext, vObj client.Object) (ctrl.Result, error) {
+func (s *csistoragecapacitySyncer) SyncToHost(ctx *synccontext.SyncContext, vObj client.Object) (ctrl.Result, error) {
 	ctx.Log.Infof("delete virtual CSIStorageCapacity %s, because physical object is missing", vObj.GetName())
 	return ctrl.Result{}, ctx.VirtualClient.Delete(ctx.Context, vObj)
 }
@@ -108,7 +109,7 @@ func (s *csistoragecapacitySyncer) enqueuePhysical(ctx context.Context, obj clie
 		return
 	}
 
-	name := s.PhysicalToVirtual(ctx, obj)
+	name := s.HostToVirtual(ctx, types.NamespacedName{Name: obj.GetName(), Namespace: obj.GetNamespace()}, obj)
 	if name.Name != "" && name.Namespace != "" {
 		q.Add(reconcile.Request{NamespacedName: name})
 	}

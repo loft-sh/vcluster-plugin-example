@@ -65,9 +65,9 @@ func newIndexByVSCPhysicalName() client.IndexerFunc {
 	}
 }
 
-var _ syncer.UpSyncer = &volumeSnapshotContentSyncer{}
+var _ syncer.ToVirtualSyncer = &volumeSnapshotContentSyncer{}
 
-func (s *volumeSnapshotContentSyncer) SyncUp(ctx *synccontext.SyncContext, pObj client.Object) (ctrl.Result, error) {
+func (s *volumeSnapshotContentSyncer) SyncToVirtual(ctx *synccontext.SyncContext, pObj client.Object) (ctrl.Result, error) {
 	pVSC := pObj.(*volumesnapshotv1.VolumeSnapshotContent)
 	// check if the VolumeSnapshotContent should get synced
 	sync, vVS, err := s.shouldSync(ctx.Context, pVSC)
@@ -85,7 +85,7 @@ func (s *volumeSnapshotContentSyncer) SyncUp(ctx *synccontext.SyncContext, pObj 
 
 var _ syncer.Syncer = &volumeSnapshotContentSyncer{}
 
-func (s *volumeSnapshotContentSyncer) SyncDown(ctx *synccontext.SyncContext, vObj client.Object) (ctrl.Result, error) {
+func (s *volumeSnapshotContentSyncer) SyncToHost(ctx *synccontext.SyncContext, vObj client.Object) (ctrl.Result, error) {
 	vVSC := vObj.(*volumesnapshotv1.VolumeSnapshotContent)
 	if vVSC.DeletionTimestamp != nil || (vVSC.Annotations != nil && vVSC.Annotations[HostClusterVSCAnnotation] != "") {
 		if len(vVSC.Finalizers) > 0 {
@@ -241,26 +241,28 @@ func (s *volumeSnapshotContentSyncer) IsManaged(ctx context.Context, pObj client
 	return sync, nil
 }
 
-func (s *volumeSnapshotContentSyncer) VirtualToPhysical(_ context.Context, req types.NamespacedName, vObj client.Object) types.NamespacedName {
+func (s *volumeSnapshotContentSyncer) VirtualToHost(_ context.Context, req types.NamespacedName, vObj client.Object) types.NamespacedName {
 	return types.NamespacedName{Name: translateVolumeSnapshotContentName(req.Name, vObj)}
 }
 
-func (s *volumeSnapshotContentSyncer) PhysicalToVirtual(ctx context.Context, pObj client.Object) types.NamespacedName {
-	pAnnotations := pObj.GetAnnotations()
-	if pAnnotations != nil && pAnnotations[translate.NameAnnotation] != "" {
-		return types.NamespacedName{
-			Name: pAnnotations[translate.NameAnnotation],
+func (s *volumeSnapshotContentSyncer) HostToVirtual(ctx context.Context, req types.NamespacedName, pObj client.Object) types.NamespacedName {
+	if pObj != nil {
+		pAnnotations := pObj.GetAnnotations()
+		if pAnnotations != nil && pAnnotations[translate.NameAnnotation] != "" {
+			return types.NamespacedName{
+				Name: pAnnotations[translate.NameAnnotation],
+			}
 		}
 	}
 
 	vObj := &volumesnapshotv1.VolumeSnapshotContent{}
-	err := clienthelper.GetByIndex(ctx, s.virtualClient, vObj, constants.IndexByPhysicalName, pObj.GetName())
+	err := clienthelper.GetByIndex(ctx, s.virtualClient, vObj, constants.IndexByPhysicalName, req.Name)
 	if err != nil {
 		if !kerrors.IsNotFound(err) {
 			return types.NamespacedName{}
 		}
 
-		return types.NamespacedName{Name: pObj.GetName()}
+		return types.NamespacedName{Name: req.Name}
 	}
 
 	return types.NamespacedName{Name: vObj.GetName()}
