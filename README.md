@@ -9,6 +9,9 @@ For more information how to develop plugins in vcluster and a complete walk thro
 To use the plugin, create a new vcluster with the `plugin.yaml`:
 
 ```
+# Apply cars crd in host cluster
+kubectl apply -f https://raw.githubusercontent.com/loft-sh/vcluster-plugin-example/main/manifests/crds.yaml
+
 # Use public plugin.yaml
 vcluster create my-vcluster -n my-vcluster -f https://raw.githubusercontent.com/loft-sh/vcluster-plugin-example/main/plugin.yaml
 ```
