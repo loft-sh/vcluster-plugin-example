@@ -1,3 +1,9 @@
+# Deprecation Notice
+> [!IMPORTANT]  
+> This repository is no longer maintained. 
+> 
+> The content has moved to [github.com/loft-sh/vcluster-sdk examples](https://github.com/loft-sh/vcluster-sdk/tree/main/examples)
+> 
 ## vCluster Plugin Example
 
 This example plugin syncs car crds from the vcluster into the host cluster.
